@@ -82,10 +82,10 @@ class DenoisingAutoencoderTrainer:
     
     def load_data(self, rootpath):
         self.train_data = load_data(os.path.join(rootpath, 'train'), batch_size=8, 
-                           num_dataset_threads=10, data_count=8000)
+                           num_dataset_threads=1, data_count=20000)
         os.system('CLS')
         self.val_data = load_data(os.path.join(rootpath, 'val'), batch_size=8, 
-                            num_dataset_threads=10, data_count=800)
+                            num_dataset_threads=1, data_count=2000)
         os.system('CLS')
         pass
 
