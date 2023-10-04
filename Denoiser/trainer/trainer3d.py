@@ -86,11 +86,11 @@ class DenoisingAutoencoderTrainer:
             self.writer.add_images(f'{self.tensorboard_name}/Images/lr={self.__get_lr()}/b={self.train_data.batch_size}/length={len(self.train_data.dataset)}', final, step)
         pass
     
-    def load_data(self, rootpath):
-        self.train_data = load_data(os.path.join(rootpath, 'train'), batch_size=8, num_workers=10,
+    def load_data(self, rootpath, batch_size):
+        self.train_data = load_data(os.path.join(rootpath, 'train'), batch_size=batch_size, num_workers=10,
                            num_dataset_threads=1, data_count=20000)
         os.system('CLS')
-        self.val_data = load_data(os.path.join(rootpath, 'val'), batch_size=8, num_workers=10,
+        self.val_data = load_data(os.path.join(rootpath, 'val'), batch_size=batch_size, num_workers=10,
                             num_dataset_threads=1, data_count=2000)
         os.system('CLS')
         pass
@@ -98,8 +98,10 @@ class DenoisingAutoencoderTrainer:
     def train(self) -> float:
         total_train_loss = 0
         self.network.train()
+        count = 0
         with tqdm(iter(self.train_data), unit="batches") as trainloop:
             for i, buffers in enumerate(trainloop):
+                count += 1
                 trainloop.set_description(f"Train Batch {i}")
                 input_tensor = self.make_input_tensor(
                                 noisy=buffers['noisy'],
@@ -123,14 +125,16 @@ class DenoisingAutoencoderTrainer:
                 curr_loss = l.cpu().data
                 total_train_loss += curr_loss
                 trainloop.set_postfix(loss=f"{curr_loss}")
-        return total_train_loss / len(self.train_data.dataset)
+        return total_train_loss / len(count)
 
     def validate(self):
         total_val_loss = 0
         self.network.eval()
         debug_images = None
+        count = 0
         with tqdm(iter(self.val_data), unit="batches") as valloop:
             for i, buffers in enumerate(valloop):
+                count += 1
                 # self.loss_plotter.update_display()
                 valloop.set_description(f"Val Batch {i}")
                 input_tensor = self.make_input_tensor(
@@ -155,7 +159,7 @@ class DenoisingAutoencoderTrainer:
                 curr_loss = l.cpu().data
                 total_val_loss += curr_loss
                 valloop.set_postfix(loss=f"{curr_loss}")
-        return total_val_loss / len(self.val_data.dataset), debug_images
+        return total_val_loss / len(count), debug_images
 
 class TrainingMenu:
     def __init__(self) -> None:
@@ -207,15 +211,16 @@ if __name__ == '__main__':
     parser.add_argument("--rootpath", help="path to data root directory", type=str, required=True)
     parser.add_argument("--experiment", help="path to experiment root directory", type=str, required=True)
     parser.add_argument("--modelversion", help="version number to save model as", type=str, required=True)
-    parser.add_argument("--load_model", help="is this model saved and to be loaded from?", type=str, required=True, default='False')
+    parser.add_argument("--load_model", help="is this model saved and to be loaded from?", type=str, required=False)
     parser.add_argument("--tensorboard", help="name of tensorboard for this run", type=str, required=True, default='tensorboard')
+    parser.add_argument("--batch_size", help="number of batches", type=int, required=True, default=8)
     args = parser.parse_args()
 
     trainer = DenoisingAutoencoderTrainer()
-    if (args.load_model == 'True'):
+    if (args.load_model):
         print("loading model")
-        trainer.load_model_from_path(os.path.join(args.experiment, f'cnn_240p_den_{args.modelversion}'))
-    elif (args.load_model == 'False'):
+        trainer.load_model_from_path(os.path.join(args.experiment, f'cnn_240p_den_{args.load_model}'))
+    elif (args.load_model == ''):
         print("new model")
         trainer.create_new_model()
 
@@ -232,7 +237,7 @@ if __name__ == '__main__':
     num_epochs = 200
 
 
-    trainer.load_data(args.rootpath)
+    trainer.load_data(args.rootpath, args.batch_size)
     trainer.load_writer(args.experiment, args.tensorboard)
 
     inputManager = TrainingMenu()
