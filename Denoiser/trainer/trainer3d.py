@@ -22,20 +22,26 @@ class DenoisingAutoencoderTrainer:
         self.loss = None
         self.writer = None
         self.tensorboard_name = None
+        self.make_input_tensor = None
         pass
 
     def load_model_from_path(self, path):
         model_name = path
         self.network = load_model(model_type=CNN_240p_Denoiser_3d, model_name=model_name)
+        self.make_input_tensor = self.network.make_input_tensor
+        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
         self.network.to(self.device)
         self.__init_params()
     
     def save_model(self, path):
         model_name = path
-        save_model(self.network, model_type=CNN_240p_Denoiser_3d, model_name=model_name)
+        save_model(self.network.module, model_type=CNN_240p_Denoiser_3d, model_name=model_name)
 
     def create_new_model(self):
-        self.network = CNN_240p_Denoiser_3d().to(self.device)
+        self.network = CNN_240p_Denoiser_3d()
+        self.make_input_tensor = self.network.make_input_tensor
+        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
+        self.network.to(self.device)
         self.__init_params()
 
     def release_model(self):
@@ -81,10 +87,10 @@ class DenoisingAutoencoderTrainer:
         pass
     
     def load_data(self, rootpath):
-        self.train_data = load_data(os.path.join(rootpath, 'train'), batch_size=8, 
+        self.train_data = load_data(os.path.join(rootpath, 'train'), batch_size=8, num_workers=10,
                            num_dataset_threads=1, data_count=20000)
         os.system('CLS')
-        self.val_data = load_data(os.path.join(rootpath, 'val'), batch_size=8, 
+        self.val_data = load_data(os.path.join(rootpath, 'val'), batch_size=8, num_workers=10,
                             num_dataset_threads=1, data_count=2000)
         os.system('CLS')
         pass
@@ -95,7 +101,7 @@ class DenoisingAutoencoderTrainer:
         with tqdm(iter(self.train_data), unit="batches") as trainloop:
             for i, buffers in enumerate(trainloop):
                 trainloop.set_description(f"Train Batch {i}")
-                input_tensor = self.network.make_input_tensor(
+                input_tensor = self.make_input_tensor(
                                 noisy=buffers['noisy'],
                                 normals=buffers['normals'],
                                 depth=buffers['depth'],
@@ -127,7 +133,7 @@ class DenoisingAutoencoderTrainer:
             for i, buffers in enumerate(valloop):
                 # self.loss_plotter.update_display()
                 valloop.set_description(f"Val Batch {i}")
-                input_tensor = self.network.make_input_tensor(
+                input_tensor = self.make_input_tensor(
                                 noisy=buffers['noisy'],
                                 normals=buffers['normals'],
                                 depth=buffers['depth'],
@@ -235,15 +241,15 @@ if __name__ == '__main__':
         for epoch in tepoch:
             tepoch.set_description(f"Epoch: {epoch}")
             # manage stuff
-            if (epoch % 5 == 0):
+            if (epoch % 1 == 0):
                 # save
-                if (epoch > 0):
-                    #save model
-                    model_name = os.path.join(args.experiment, f'cnn_240p_den_{args.modelversion}')
-                    trainer.save_model(path=model_name)
-                    # trainer.release_model()
-                    # trainer.load_model_from_path(path=model_name)
-                    pass
+                #if (epoch > 0):
+                #save model
+                model_name = os.path.join(args.experiment, f'cnn_240p_den_{args.modelversion}')
+                trainer.save_model(path=model_name)
+                #trainer.release_model()
+                #trainer.load_model_from_path(path=model_name)
+                pass
 
                 inputManager.menu(optim=trainer.optim, timeout=10)
                 print("Continuing...")

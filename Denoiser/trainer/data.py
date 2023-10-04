@@ -91,8 +91,8 @@ class CNN_SD_Denoiser_Dataset(Dataset):
                 buffers['shape'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'specular-{subdir}.{self.file_type}')):
                 buffers['specular'] = self.trans(Image.open(img_path))[0:1]
-            else:
-                raise Exception(f"invalid buffer type: {image}")
+            #else:
+                #raise Exception(f"invalid buffer type: {image}")
             pass
         keys = buffers.keys()
         assert len(keys) == 8
