@@ -1,4 +1,4 @@
-from .networks.network3d import CNN_240p_Denoiser_3d
+from .networks.network3d import CNN_240p_Denoiser_Expanded_3d
 from .data import load_data
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -27,7 +27,7 @@ class DenoisingAutoencoderTrainer:
 
     def load_model_from_path(self, path):
         model_name = path
-        self.network = load_model(model_type=CNN_240p_Denoiser_3d, model_name=model_name)
+        self.network = load_model(model_type=CNN_240p_Denoiser_Expanded_3d, model_name=model_name)
         self.make_input_tensor = self.network.make_input_tensor
         self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
         self.network.to(self.device)
@@ -35,10 +35,10 @@ class DenoisingAutoencoderTrainer:
     
     def save_model(self, path):
         model_name = path
-        save_model(self.network.module, model_type=CNN_240p_Denoiser_3d, model_name=model_name)
+        save_model(self.network.module, model_type=CNN_240p_Denoiser_Expanded_3d, model_name=model_name)
 
     def create_new_model(self):
-        self.network = CNN_240p_Denoiser_3d()
+        self.network = CNN_240p_Denoiser_Expanded_3d()
         self.make_input_tensor = self.network.make_input_tensor
         self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
         self.network.to(self.device)
@@ -103,20 +103,12 @@ class DenoisingAutoencoderTrainer:
             for i, buffers in enumerate(trainloop):
                 count += 1
                 trainloop.set_description(f"Train Batch {i}")
-                input_tensor = self.make_input_tensor(
-                                noisy=buffers['noisy'],
-                                normals=buffers['normals'],
-                                depth=buffers['depth'],
-                                albedo=buffers['albedo'],
-                                shape=buffers['shape'],
-                                emission=buffers['emission'],
-                                specular=buffers['specular'],
-                            ).to(self.device)
+                input_tensor = self.make_input_tensor(buffers).to(self.device)
                 ground_truth = buffers['converged'][:, :, None, :, :].to(self.device)
                 res = self.network(input_tensor)
                 input_tensor = input_tensor.detach()
                 del input_tensor
-                l = self.loss(res, ground_truth)
+                l = self.loss(res, ground_truth[:,:,0,:,:])
                 ground_truth = ground_truth.detach()
                 del ground_truth
                 self.optim.zero_grad()
@@ -125,7 +117,7 @@ class DenoisingAutoencoderTrainer:
                 curr_loss = l.cpu().data
                 total_train_loss += curr_loss
                 trainloop.set_postfix(loss=f"{curr_loss}")
-        return total_train_loss / len(count)
+        return total_train_loss / count
 
     def validate(self):
         total_val_loss = 0
@@ -137,29 +129,21 @@ class DenoisingAutoencoderTrainer:
                 count += 1
                 # self.loss_plotter.update_display()
                 valloop.set_description(f"Val Batch {i}")
-                input_tensor = self.make_input_tensor(
-                                noisy=buffers['noisy'],
-                                normals=buffers['normals'],
-                                depth=buffers['depth'],
-                                albedo=buffers['albedo'],
-                                shape=buffers['shape'],
-                                emission=buffers['emission'],
-                                specular=buffers['specular'],
-                            ).to(self.device)
+                input_tensor = self.make_input_tensor(buffers).to(self.device)
                 ground_truth = buffers['converged'][:, :, None, :, :].to(self.device)
                 res = self.network(input_tensor)
                 if (i == 0):
-                    debug_images = ground_truth[:8, :, 0, :, :], res[:8, :, 0, :, :]
+                    debug_images = ground_truth[:8, :, 0, :, :], res[:8, :, :, :]
                     pass
                 input_tensor = input_tensor.detach()
                 del input_tensor
-                l = self.loss(res, ground_truth)
+                l = self.loss(res, ground_truth[:,:,0,:,:])
                 ground_truth = ground_truth.detach()
                 del ground_truth
                 curr_loss = l.cpu().data
                 total_val_loss += curr_loss
                 valloop.set_postfix(loss=f"{curr_loss}")
-        return total_val_loss / len(count), debug_images
+        return total_val_loss / count, debug_images
 
 class TrainingMenu:
     def __init__(self) -> None:
@@ -220,7 +204,7 @@ if __name__ == '__main__':
     if (args.load_model):
         print("loading model")
         trainer.load_model_from_path(os.path.join(args.experiment, f'cnn_240p_den_{args.load_model}'))
-    elif (args.load_model == ''):
+    elif (args.load_model is None):
         print("new model")
         trainer.create_new_model()
 

@@ -56,27 +56,70 @@ class CNN_240p_Denoiser_Expanded_3d(torch.nn.Module):
             N.append(torch.nn.Conv3d(in_channels=in_channel, out_channels=out_channel, kernel_size=1))
             return torch.nn.Sequential(*N)
 
+        def DepthPoint2D(in_channel, out_channel, kernel_size):
+            N = []
+            N.append(torch.nn.Conv2d(in_channels=in_channel, out_channels=in_channel, kernel_size=kernel_size, groups=in_channel))
+            N.append(torch.nn.Conv2d(in_channels=in_channel, out_channels=out_channel, kernel_size=1))
+            return torch.nn.Sequential(*N)
+
+        def DepthPointTranspose2D(in_channel, out_channel, kernel_size, output_padding, dilation, stride):
+            N = []
+            N.append(torch.nn.ConvTranspose2d(in_channels=in_channel, out_channels=in_channel, kernel_size=kernel_size, groups=in_channel, output_padding=output_padding, dilation=dilation, stride=stride))
+            N.append(torch.nn.ConvTranspose2d(in_channels=in_channel, out_channels=out_channel, kernel_size=1))
+            return torch.nn.Sequential(*N)
+
         def EncoderInitBlock():
             N = []
-            N.append(DepthPoint(3, 32, (2,1,1)))
+            N.append(DepthPoint(3, 32, (3,1,1)))
             N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 32, (2,1,1)))
+            N.append(DepthPoint(32, 32, (1,3,3)))
             N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 32, (2,1,1)))
+            N.append(torch.nn.AvgPool3d(kernel_size=(1,3,3)))
+
+            N.append(DepthPoint(32, 32, (3,3,3)))
             N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 32, (2,1,1)))
+            N.append(DepthPoint(32, 32, (3,3,3)))
             N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 32, (2,1,1)))
+            N.append(torch.nn.AvgPool3d(kernel_size=(3,3,3)))
+
+            N.append(DepthPoint(32, 32, (1,3,3)))
             N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 3, (2,1,1)))
+            N.append(torch.nn.AvgPool3d(kernel_size=(1,3,3)))
+
+            return torch.nn.Sequential(*N)
+
+        def DecoderBlock():
+            """
+            1. Lose the depth channel
+            2. Blow up image
+            3. Refine image
+            """
+            N = []
+            N.append(DepthPointTranspose2D(in_channel=32, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,4), stride=1))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,2), stride=2))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,2), stride=2))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(1,3), stride=2))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(1,2), stride=2))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPoint2D(16, 3, 3))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPoint2D(3, 3, 3))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPoint2D(3, 3, 3))
             N.append(torch.nn.ReLU())
             return torch.nn.Sequential(*N)
-        
-        self.block1 = EncoderInitBlock()
 
+        self.encoder = EncoderInitBlock()
+        self.decoder = DecoderBlock()
 
     def forward(self, x):
-        return self.block1(x)
+        encoded = self.encoder(x)
+        return self.decoder(encoded.view(-1, 32, 7, 14))
+        
 
     def make_input_tensor(self, buffer):
         buffer_list = [] 
@@ -103,7 +146,7 @@ class CNN_240p_Denoiser_Expanded_3d(torch.nn.Module):
 
 if __name__=='__main__':
     from trainer.data import load_data
-    dataset = load_data('/workspace/CNN_240p_Denoiser/val', batch_size=16, num_dataset_threads=3, data_count=10)
+    dataset = load_data('/workspace/CNN_240p_Denoiser/val', batch_size=8, num_dataset_threads=3, data_count=10)
     model = CNN_240p_Denoiser_Expanded_3d()
     sd_size = (240,426)
     for b in dataset:
