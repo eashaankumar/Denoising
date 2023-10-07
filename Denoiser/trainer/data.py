@@ -32,7 +32,7 @@ class CNN_SD_Denoiser_Dataset(Dataset):
             transforms.ToTensor(),
             ])
         self.data = []
-        self.desiredKeys = ['albedo', 'converged', 'depth', 'emission', 'noisy', 'normals', 'shape', 'specular']
+        self.desiredKeys = ['albedo', 'converged', 'depth', 'emission', 'extcoMetal', 'ior', 'noisy', 'normals', 'roughSmooth', 'shape', 'k', 'specular']
         
         self.threads = []
         self.threadsData = []
@@ -75,6 +75,7 @@ class CNN_SD_Denoiser_Dataset(Dataset):
         subdirPath,images,subdir = self.data[index]
         for image in images:
             img_path = os.path.join(subdirPath, image)
+             
             if (image.endswith(f'noisy-{subdir}.{self.file_type}')):
                 buffers['noisy'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'albedo-{subdir}.{self.file_type}')):
@@ -82,20 +83,26 @@ class CNN_SD_Denoiser_Dataset(Dataset):
             elif (image.endswith(f'converged-{subdir}.{self.file_type}')):
                 buffers['converged'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'depth-{subdir}.{self.file_type}')):
-                buffers['depth'] = self.trans(Image.open(img_path))[0:1]
+                buffers['depth'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'emission-{subdir}.{self.file_type}')):
                 buffers['emission'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'normals-{subdir}.{self.file_type}')):
                 buffers['normals'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'shape-{subdir}.{self.file_type}')):
                 buffers['shape'] = self.trans(Image.open(img_path))
+            elif (image.endswith(f'k-{subdir}.{self.file_type}')):
+                buffers['k'] = self.trans(Image.open(img_path))
+            elif (image.endswith(f'extcoMetal-{subdir}.{self.file_type}')):
+                buffers['extcoMetal'] = self.trans(Image.open(img_path))
+            elif (image.endswith(f'ior-{subdir}.{self.file_type}')):
+                buffers['ior'] = self.trans(Image.open(img_path))
+            elif (image.endswith(f'roughSmooth-{subdir}.{self.file_type}')):
+                buffers['roughSmooth'] = self.trans(Image.open(img_path))
             elif (image.endswith(f'specular-{subdir}.{self.file_type}')):
-                buffers['specular'] = self.trans(Image.open(img_path))[0:1]
-            #else:
-                #raise Exception(f"invalid buffer type: {image}")
+                buffers['specular'] = self.trans(Image.open(img_path))
             pass
         keys = buffers.keys()
-        assert len(keys) == 8
+        assert len(keys) == len(self.desiredKeys)
         for key in keys:
             assert key in self.desiredKeys
 
@@ -113,3 +120,4 @@ if __name__ == '__main__':
     parser.add_argument("--type", help="image file extension (png, jpeg, etc...)", default='png')
     args = parser.parse_args()
     dataset = CNN_SD_Denoiser_Dataset(dataset_path= args.path, file_type=args.type)
+    print(dataset[0])
