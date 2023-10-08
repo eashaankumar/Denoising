@@ -18,20 +18,18 @@ class DenoisingAutoencoderTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(self.device)
         self.sd_size = (240,426)
-        self.optim = None
-        self.loss = None
         self.writer = None
         self.tensorboard_name = None
         self.make_input_tensor = None
+        self.lr = 0
         pass
 
     def load_model_from_path(self, path):
         model_name = path
         self.network = load_model(model_type=CNN_240p_Denoiser_Expanded_3d, model_name=model_name)
         self.make_input_tensor = self.network.make_input_tensor
-        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
+        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1, 2])
         self.network.to(self.device)
-        self.__init_params()
     
     def save_model(self, path):
         model_name = path
@@ -40,32 +38,31 @@ class DenoisingAutoencoderTrainer:
     def create_new_model(self):
         self.network = CNN_240p_Denoiser_Expanded_3d()
         self.make_input_tensor = self.network.make_input_tensor
-        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1])
+        self.network = torch.nn.DataParallel(self.network, device_ids=[0, 1, 2])
         self.network.to(self.device)
-        self.__init_params()
 
     def release_model(self):
         self.network.to('cpu')
         self.network = None
-
-    def __init_params(self):
-        self.optim = torch.optim.Adam(self.network.parameters(), 0.001)
-        self.loss = torch.nn.MSELoss()
 
     def load_writer(self, experiment_dir, tensorboard_name):
         self.writer = SummaryWriter(os.path.join(experiment_dir, 'tf_logs', tensorboard_name))
         self.tensorboard_name = tensorboard_name
         pass
 
-    def __get_lr(self):
-        for g in self.optim.param_groups:
-            olr = g['lr']
-        return olr
+    def get_lr(self):
+        return self.lr
+        # for g in self.optim.param_groups:
+        #     olr = g['lr']
+        # return olr
+
+    def set_lr(self, lr):
+        self.lr = lr
 
     def record_loss(self, train_loss, val_loss, step):
         if self.writer:
             
-            self.writer.add_scalars(f'{self.tensorboard_name}/Loss/lr={self.__get_lr()}/b={self.train_data.batch_size}/length={len(self.train_data.dataset)}', {
+            self.writer.add_scalars(f'{self.tensorboard_name}/Loss/lr={self.get_lr()}/b={self.train_data.batch_size}/length={len(self.train_data.dataset)}', {
                 'Training Loss': train_loss,
                 'Validation Loss': val_loss,
             }, step)
@@ -83,7 +80,7 @@ class DenoisingAutoencoderTrainer:
                 final[j] = tru[i]
                 final[j+1] = pred[i]
                 j += 2
-            self.writer.add_images(f'{self.tensorboard_name}/Images/lr={self.__get_lr()}/b={self.train_data.batch_size}/length={len(self.train_data.dataset)}', final, step)
+            self.writer.add_images(f'{self.tensorboard_name}/Images/lr={self.get_lr()}/b={self.train_data.batch_size}/length={len(self.train_data.dataset)}', final, step)
         pass
     
     def load_data(self, rootpath, batch_size):
@@ -96,6 +93,9 @@ class DenoisingAutoencoderTrainer:
         pass
 
     def train(self) -> float:
+        print(f'Training with LR: {self.get_lr()}')
+        self.optim = torch.optim.Adam(self.network.parameters(), self.get_lr())
+        self.loss = torch.nn.MSELoss()
         total_train_loss = 0
         self.network.train()
         count = 0
@@ -120,6 +120,7 @@ class DenoisingAutoencoderTrainer:
         return total_train_loss / count
 
     def validate(self):
+        self.loss = torch.nn.MSELoss()
         total_val_loss = 0
         self.network.eval()
         debug_images = None
@@ -161,28 +162,25 @@ class TrainingMenu:
             return True
         return False
     
-    def _handle_learning_rate(self, optim, timeout=5):
-        for g in optim.param_groups:
-            olr = g['lr']
-            print(f'old lr: {olr}')
+    def _handle_learning_rate(self, trainer, timeout=5):
+        print(f'old lr: {trainer.get_lr()}')
         new_lr = float(inputimeout(prompt='Enter new lr: ', timeout=20))
         print(f'new lr={new_lr}')
         if (not self.confirm(timeout=20)):
             return self.menu(timeout=timeout)
-        for g in optim.param_groups:
-            old_lr = g['lr']
-            g['lr'] = new_lr
-            print(f"{bcolors.OKGREEN}Old LR: {old_lr} New LR: {new_lr}{bcolors.ENDC}")
+        old_lr = trainer.get_lr()
+        trainer.set_lr(new_lr)
+        print(f"{bcolors.OKGREEN}Old LR: {old_lr} New LR: {trainer.get_lr()}{bcolors.ENDC}")
 
-    def menu(self, optim, timeout=5):
+    def menu(self, trainer, timeout=5):
         try:
             menu = inputimeout(prompt=self.get_menu_options(), timeout=timeout)
             if (menu == "1"):
-                self._handle_learning_rate(optim, timeout=timeout)
+                self._handle_learning_rate(trainer, timeout=timeout)
                 return
             else:
                 print(f'{bcolors.FAIL}invalid choice{bcolors.ENDC}')
-                self.menu(timeout=timeout, optim=optim)
+                self.menu(timeout=timeout, trainer=trainer)
                 return
         except TimeoutOccurred:
             return
@@ -198,6 +196,7 @@ if __name__ == '__main__':
     parser.add_argument("--load_model", help="is this model saved and to be loaded from?", type=str, required=False)
     parser.add_argument("--tensorboard", help="name of tensorboard for this run", type=str, required=True, default='tensorboard')
     parser.add_argument("--batch_size", help="number of batches", type=int, required=True, default=8)
+    parser.add_argument("--learning_rate", help="lr", type=float, required=True)
     args = parser.parse_args()
 
     trainer = DenoisingAutoencoderTrainer()
@@ -220,10 +219,10 @@ if __name__ == '__main__':
     
     num_epochs = 200
 
-
+    
     trainer.load_data(args.rootpath, args.batch_size)
     trainer.load_writer(args.experiment, args.tensorboard)
-
+    trainer.set_lr(args.learning_rate)
     inputManager = TrainingMenu()
 
     with tqdm(range(num_epochs), unit="epochs", mininterval=0.01) as tepoch:
@@ -240,7 +239,7 @@ if __name__ == '__main__':
                 #trainer.load_model_from_path(path=model_name)
                 pass
 
-                inputManager.menu(optim=trainer.optim, timeout=10)
+                inputManager.menu(trainer=trainer, timeout=10)
                 print("Continuing...")
                 
             train_loss = trainer.train()

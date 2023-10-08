@@ -69,8 +69,28 @@ class CNN_SD_Denoiser_Dataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+    def __invlerp(self, a, b, v):
+        return (v-a) / (b-a)
+
+    def _getshapemasks(self, shapebuffer):
+        if len(shapebuffer.shape) == 3:
+            glass_data = torch.abs(shapebuffer[0] - 1) > 1e-1 and torch.abs(shapebuffer[1] - 1) < 1e-1 and torch.abs(shapebuffer[2] - 1) < 1e-1
+            standard_data = torch.abs(shapebuffer[0] - 1) < 1e-1 and torch.abs(shapebuffer[1] - 1) > 1e-1 and torch.abs(shapebuffer[2] - 1) < 1e-1
+        return glass_data, standard_data
+    
+    def __preprocess(self, buffers):
+        glass_data, standard_data = self._getshapemasks(buffers['shape'])
+        print(glass_data.shape, standard_data.shape)
+        pass
     
     def __getitem__(self, index):
+        # smoothness: 0,1
+        # metallic: 0, 1
+        # ior: 0 1 (stand) 1,2.8 (glass)
+        # roughness: 0,0.5
+        # extincCoef: 0, 10
+        # shape: green (glass) red (stand)
         buffers = {}
         subdirPath,images,subdir = self.data[index]
         for image in images:
@@ -101,6 +121,8 @@ class CNN_SD_Denoiser_Dataset(Dataset):
             elif (image.endswith(f'specular-{subdir}.{self.file_type}')):
                 buffers['specular'] = self.trans(Image.open(img_path))
             pass
+
+        # self.__preprocess(buffers)
         keys = buffers.keys()
         assert len(keys) == len(self.desiredKeys)
         for key in keys:

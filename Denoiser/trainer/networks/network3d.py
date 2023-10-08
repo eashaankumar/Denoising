@@ -70,22 +70,14 @@ class CNN_240p_Denoiser_Expanded_3d(torch.nn.Module):
 
         def EncoderInitBlock():
             N = []
-            N.append(DepthPoint(3, 32, (3,1,1)))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPoint(32, 32, (1,3,3)))
-            N.append(torch.nn.ReLU())
-            N.append(torch.nn.AvgPool3d(kernel_size=(1,3,3)))
-
-            N.append(DepthPoint(32, 32, (3,3,3)))
+            N.append(DepthPoint(3, 32, (3,3,3)))
+            N.append(torch.nn.BatchNorm3d(32))
             N.append(torch.nn.ReLU())
             N.append(DepthPoint(32, 32, (3,3,3)))
+            N.append(torch.nn.ReLU())
+            N.append(DepthPoint(32, 128, (3,3,3)))
             N.append(torch.nn.ReLU())
             N.append(torch.nn.AvgPool3d(kernel_size=(3,3,3)))
-
-            N.append(DepthPoint(32, 32, (1,3,3)))
-            N.append(torch.nn.ReLU())
-            N.append(torch.nn.AvgPool3d(kernel_size=(1,3,3)))
-
             return torch.nn.Sequential(*N)
 
         def DecoderBlock():
@@ -95,21 +87,11 @@ class CNN_240p_Denoiser_Expanded_3d(torch.nn.Module):
             3. Refine image
             """
             N = []
-            N.append(DepthPointTranspose2D(in_channel=32, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,4), stride=1))
+            N.append(DepthPointTranspose2D(in_channel=128, out_channel=32, kernel_size=3, output_padding=1, dilation=(2,2), stride=3))
             N.append(torch.nn.ReLU())
-            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,2), stride=2))
+            N.append(DepthPointTranspose2D(in_channel=32, out_channel=16, kernel_size=4, output_padding=0, dilation=(1,1), stride=1))
             N.append(torch.nn.ReLU())
-            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(2,2), stride=2))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(1,3), stride=2))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPointTranspose2D(in_channel=16, out_channel=16, kernel_size=3, output_padding=1, dilation=(1,2), stride=2))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPoint2D(16, 3, 3))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPoint2D(3, 3, 3))
-            N.append(torch.nn.ReLU())
-            N.append(DepthPoint2D(3, 3, 3))
+            N.append(DepthPoint2D(in_channel=16, out_channel=3, kernel_size=1))
             N.append(torch.nn.ReLU())
             return torch.nn.Sequential(*N)
 
@@ -118,7 +100,8 @@ class CNN_240p_Denoiser_Expanded_3d(torch.nn.Module):
 
     def forward(self, x):
         encoded = self.encoder(x)
-        return self.decoder(encoded.view(-1, 32, 7, 14))
+        # return encoded
+        return self.decoder(encoded.view(-1, 128, 78, 140))
         
 
     def make_input_tensor(self, buffer):
